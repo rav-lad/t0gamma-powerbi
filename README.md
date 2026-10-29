@@ -1,31 +1,53 @@
-# t0-powerbi
+# t0 × Power BI
 
-**Probabilistic forecasts from [t0-gamma](https://huggingface.co/theforecastingcompany/t0-gamma), running locally inside Power BI Desktop.**
+### Foundation-model forecasting, directly in the business intelligence workflow.
 
-Load a table in Power BI, click **Refresh**, and get P10 / P50 / P90 forecasts for every series in it. Power
-Query hands the table to Python, the official [`tfc-t0`](https://github.com/theforecastingcompany/tfc-t0)
-runtime forecasts on your own machine, and the result comes back as a regular Power BI table. No API key, no
-cloud inference, no server, no CSV to export by hand.
+**A working integration prototype that brings [The Forecasting Company's t0](https://www.theforecastingcompany.com/) into Microsoft Power BI.**
 
-![Walmart sales forecast in Power BI](screenshots/dashboard_walmart.png)
+Instead of asking analysts to export data, run a separate forecasting tool, and import the results, this project connects **Power Query → t0 → Power BI**. Users can refresh their data, explore forecasts by store or product, and view uncertainty alongside their existing business metrics—all inside a familiar dashboard.
 
-*Power BI Desktop, Walmart store 18: weekly sales history, 30-week t0-gamma forecast with its P10–P90 band,
-and KPI cards. The model puts the peak in the week of 21 December 2012 without being told about holidays.*
+**[▶ Watch the 3-minute demo](https://youtu.be/c0pWl_tuQ1o)** · [Setup guide](powerbi/dashboard_guide.md) · [Power Query scripts](powerbi/queries/)
 
-**Demo video:** https://youtu.be/c0pWl_tuQ1o
+[![Power BI dashboard with historical Walmart sales, forecast quantiles and business KPIs](screenshots/dashboard_walmart.png)](https://youtu.be/c0pWl_tuQ1o)
 
-## What was built
+*Working Power BI Desktop report using weekly sales from 45 Walmart stores. The dashboard combines historical sales, a 30-week forecast, a quantile band, a store selector and business KPIs.*
 
-- A small Python package, `t0_powerbi`, that takes any table with a date column and a numeric column and
-  returns forecasts. It finds the columns, the series (store, product, ...) and the frequency (daily, weekly or
-  monthly) by itself, so nothing has to be renamed.
-- A script to paste into Power Query's **Run Python script**, and ready-made Power Query (M) queries that wire it up.
-- A Power BI report built on one table: history and forecast together, a series slicer, a chart with the
-  P10–P90 band, and KPI cards (expected demand, expected change, forecast uncertainty, volatility, peak).
-- `install.ps1`, which sets up the environment and downloads the model once.
+> **The contribution is the integration, not a new forecasting model.** This repository uses the official `tfc-t0` runtime and focuses on making a time-series foundation model usable through Power BI. Inference runs locally in this proof of concept; an API-backed integration is a natural next step, **not a feature implemented here**.
 
+## Why Power BI?
 
-The pasted script is short:
+Forecasting models are useful only if their outputs reach the people making decisions. In many businesses, those people already work in Power BI.
+
+Microsoft reported **30 million monthly active Power BI users** and adoption across **more than 375,000 organizations** in its [2025 Power BI recap](https://community.fabric.microsoft.com/blog/fbc_pbiupdatesblog/power-bi-2025-holiday-recap-a-decade-of-innovation-and-impact/5173964).
+
+That makes Power BI an interesting way to distribute advanced forecasting capabilities without asking users to adopt an entirely new application.
+
+| Typical forecasting workflow | With this prototype |
+| --- | --- |
+| Export a table to CSV or a notebook | Use a table already loaded in Power Query |
+| Prepare each new dataset manually | Automatically detect common date, value and series columns |
+| Run a model outside the BI environment | Trigger forecasting during a Power BI refresh |
+| Reimport predictions into a report | Receive a regular Power BI table with history and forecast |
+| Interpret model output separately | Explore quantiles, trends and KPIs in the same dashboard |
+
+**The goal:** make forecasting another step in the analytics workflow, rather than a separate workflow of its own.
+
+## What I built
+
+- **Power Query integration:** M queries and a short Python step connect Power BI tables to the forecasting runtime.
+- **Dataset adaptation:** a Python package (`t0_powerbi`) infers common date, target, series-ID and frequency fields, so demo datasets do not need to follow a fixed naming convention.
+- **Multi-series forecasting:** a single refresh can forecast multiple stores, products or other groups.
+- **Power BI-friendly output:** historical observations and future quantiles are returned as a normal table, ready for Power BI visuals and DAX measures.
+- **Interactive demonstration dashboard:** store selector, historical trends, median forecast, 10th–90th quantile band and KPI cards for demand, change, uncertainty, volatility and peak period.
+- **Reproducible local setup:** `install.ps1` prepares Python, installs dependencies and downloads the model once.
+
+The integration uses **Power BI's existing Power Query + Python capabilities**. It is not yet a native Power BI connector or a custom visual.
+
+## How it works
+
+![Current Power BI integration architecture](screenshots/current_architecture.png)
+
+The core Python step is deliberately small:
 
 ```python
 from t0_powerbi import for_power_bi, forecast_dataframe
@@ -34,157 +56,125 @@ forecast = forecast_dataframe(dataset, horizon=30, include_history=True)
 forecast = for_power_bi(forecast)
 ```
 
-| column | meaning |
+Here, `dataset` is the dataframe provided by Power Query. The adapter handles the conversion between BI data and the forecasting runtime; the model output is formatted so it can be loaded into Power BI like any other query result.
+
+**Refresh vs. interaction:** clicking **Refresh** reruns the forecast. Changing the store selector only filters the forecast rows already loaded; it does not trigger a new model call.
+
+### Output schema
+
+| Column | Meaning |
 | --- | --- |
-| `date` | period of the row (a forecast starts one period after each series' own last date) |
-| `series_id` | the series: a store, a product, `Geneva \| Café`, or `All` when the table has no id column |
-| `kind` | `actual` (observed) or `forecast` (future) |
-| `actual` | the observed value, on `actual` rows only |
-| `forecast`, `p10`, `p50`, `p90` | t0-gamma's quantiles, on `forecast` rows only (`forecast` = `p50`) |
+| `date` | Historical or future period |
+| `series_id` | Store, product or other detected series (or `All` for a single series) |
+| `kind` | `actual` or `forecast` |
+| `actual` | Observed value, populated on historical rows |
+| `forecast` / `p50` | Median forecast (50th quantile) |
+| `p10` / `p90` | 10th and 90th forecast quantiles |
 
-The empty cells are layout, not predictions: the model forecasts only the future, and the history is copied into
-the same table so the report needs a single query.
+Missing values in forecast-only or actual-only columns are intentional. History and forecast are kept in **one table** to simplify report building. The column names `p10`, `p50` and `p90` are part of the current code interface; the dashboard presents them as **quantiles**.
 
-## How well does it forecast?
+## Try it in Power BI Desktop
 
-On the Walmart data below, hiding the last 12 weeks of all 45 stores and forecasting them (`python examples/walmart_holdout.py`):
+### 1. Install locally
 
-| | |
-| --- | --- |
-| mean absolute % error of the P50 forecast | **3.3 %** (repeating the last week: 6.0 %) |
-| actual values inside the P10–P90 band | **91 %** (a perfectly calibrated band gives 80 %, so it errs on the cautious side) |
-
-That is one window of 540 store-weeks, a sanity check rather than a full backtest.
-
-## Install
-
-Windows, Python 3.10–3.13 (3.11 is the one used). Power BI Desktop is Windows-only.
+**Requirements:** Windows, Power BI Desktop and Python 3.10–3.13 (tested with Python 3.11). A GPU is not required.
 
 ```powershell
-git clone <this repository> t0-powerbi
+# Replace YOUR_USERNAME with the repository owner.
+git clone https://github.com/YOUR_USERNAME/t0-powerbi.git
 cd t0-powerbi
 powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-`install.ps1` finds Python, creates `.venv`, installs the package with PyTorch (CPU), downloads t0-gamma once
-(~1 GB, into the Hugging Face cache), runs a test forecast, and prints the folder to give Power BI. It is safe to
-re-run. Without the script: `py -3.11 -m venv .venv`, `.\.venv\Scripts\python.exe -m pip install -e .`,
-`.\.venv\Scripts\python.exe -m t0_powerbi.model`.
+The installer creates `.venv`, installs `t0_powerbi` and its dependencies, downloads the `t0-gamma` weights (approximately 1 GB), runs a sample forecast and prints the Python environment directory to configure in Power BI.
 
-After the download, forecasting is **offline** (`local_files_only`). If the weights are missing, a refresh fails
-with the command that fixes it; it never falls back to another model.
+After the first download, **this demo runs inference locally**. The local design makes the prototype reproducible; it is not a statement that hosted/API inference should be avoided.
 
-**CPU requirements**, measured on a Ryzen 7 5700X (8 cores), 32 GB RAM, CPU only:
+### 2. Connect Power BI
 
-| step | time |
+Follow the detailed [dashboard setup guide](powerbi/dashboard_guide.md). In short:
+
+1. In Power BI Desktop, configure **Python scripting** to use this project's `.venv\Scripts` directory, and apply the privacy configuration described in the guide.
+2. Add the three queries from [`powerbi/queries/`](powerbi/queries/): `DataFile` (source CSV path), `Data` (input table) and `Forecast` (the Python forecasting step).
+3. Load the result, then create the provided measures and visuals.
+4. To try another CSV, change the path in `DataFile` and click **Refresh**.
+
+The included queries are configured for a CSV demo, but the adapter is designed to accept a suitable Power Query dataframe. Integrations with arbitrary Power BI data sources have not been fully validated.
+
+### 3. Bring your own dataset
+
+The adapter is intended for **common daily, weekly and monthly time-series tables**. It tries to infer:
+
+| Field | Default behavior |
 | --- | --- |
-| first download of t0-gamma (976 MB on disk) | ~50 s, depends on bandwidth |
-| loading t0-gamma from the cache | ~3 s |
-| forecast, 45 series of 143 weeks | ~5 s for the whole script, in a fresh process |
-| peak RAM during a forecast | ~2.2 GB |
+| Date | Detects dates, including common text date formats |
+| Target | Prefers numeric fields named like sales, revenue, amount or units |
+| Series | Uses suitable store, SKU, product or other ID fields; combines multiple group fields when needed |
+| Frequency | Infers daily, weekly or monthly spacing from timestamps |
 
-A GPU is not needed. With a CUDA build of PyTorch installed it is used automatically (`T0_POWERBI_DEVICE=cpu|cuda`
-overrides); this was not tested.
+If automatic detection is not appropriate, configure `DATE_COL`, `VALUE_COL`, `ID_COLS` or `FREQ` in [`powerbi/power_query_script.py`](powerbi/power_query_script.py).
 
-## Use it in Power BI
+Missing time periods are passed as missing values rather than interpolated, and multiple rows in the same period are summed. For incomplete weekly or monthly periods, `DROP_LAST_PERIODS = 1` can prevent a partial final observation from distorting the forecast.
 
-Follow [**powerbi/dashboard_guide.md**](powerbi/dashboard_guide.md) (about 15 minutes):
+## Demo dataset: Walmart weekly sales
 
-1. Point Power BI's *Python scripting* option at `.venv\Scripts`, and set the privacy option.
-2. Paste three queries from [`powerbi/queries/`](powerbi/queries/): `DataFile` (the CSV path), `Data`, `Forecast`.
-3. Create the measures (copy-paste) and build the page.
+The example uses [`examples/Walmart_Sales.csv`](examples/Walmart_Sales.csv), a store-level retail dataset that makes the integration easy to explore.
 
-To forecast another file, change the path in `DataFile` and refresh. The slicer only **filters forecasts that
-already exist**; only a refresh runs the model, and it reloads the model each time (~3 s).
-
-### Works on any table
-
-| detected | rule |
+| Property | Value |
 | --- | --- |
-| date column | the first column of dates, including text such as `2026-01-31` or `31-01-2026` (day-first or month-first is decided by which reading gives a contiguous series) |
-| value to forecast | the first numeric column not named like an id; names such as `sales`, `revenue`, `amount`, `units` win |
-| series | every text column, plus numeric columns named like ids (`Store`, `sku`); several columns are combined; columns unique per row (ticket numbers) are ignored; none = one series |
-| frequency | median spacing of the dates: daily, weekly or monthly. `horizon` counts those periods |
+| Stores | 45 independent store series |
+| Observations | 6,435 rows (143 weeks per store) |
+| Coverage | 5 February 2010 to 26 October 2012 |
+| Target | `Weekly_Sales` |
+| Date input | `Date`, stored as `dd-mm-yyyy` text |
+| Additional fields | `Holiday_Flag`, `Temperature`, `Fuel_Price`, `CPI`, `Unemployment` |
 
-If a detection is wrong, set `DATE_COL`, `VALUE_COL`, `ID_COLS` or `FREQ` at the top of
-[`powerbi/power_query_script.py`](powerbi/power_query_script.py). Missing periods are passed to the model as
-missing values (not interpolated), several rows in one period are summed, and bad data stops with a message that
-lists the columns found and example rows.
+The current demo **forecasts from sales history only**; the additional fields are not passed as future covariates. The dataset is useful for demonstrating multi-series selection, weekly frequency detection, visible seasonality and forecast uncertainty **within Power BI**, rather than for claiming state-of-the-art forecasting accuracy.
 
-**Unfinished periods matter.** t0 reads the last value as real. A month that is only half over looks like a
-collapse and the forecast follows it. The package warns when the last weekly or monthly value is under half its
-predecessors; set `DROP_LAST_PERIODS = 1` in the script to drop it.
+*Data provenance:* the file appears to match a Walmart store-level dataset commonly circulated on Kaggle. Its original license and provenance have not been independently verified; verify redistribution rights before publishing the CSV.
 
-## The Walmart dataset
+## From local prototype to a hosted API integration
 
-[`examples/Walmart_Sales.csv`](examples/Walmart_Sales.csv): weekly sales of 45 Walmart stores, 6,435 rows.
+The current implementation validates the **Power BI user experience** with the official local `tfc-t0` runtime. A production-oriented version could keep the same BI interface while replacing local inference with a hosted API from The Forecasting Company:
 
-| | |
-| --- | --- |
-| stores | 45 (`Store` = 1 … 45), one series each |
-| period | 2010-02-05 to 2012-10-26: 143 weeks, one row per store per Friday |
-| completeness | no missing weeks, no duplicates, no empty cells |
-| `Weekly_Sales` | the value forecast: from 209,986 to 3,818,686, median 960,746 (currency not stated); store averages range from 259,862 (store 33) to 2,107,677 (store 20) |
-| `Date` | text in `dd-mm-yyyy` (`05-02-2010` is 5 February), handled automatically |
+![Future API-based Power BI integration](screenshots/future_architecture.png)
 
-Five more columns come with it, and **t0-gamma does not use them here** (covariates are a next step):
+Potential benefits include centralized model serving, simpler client installation and usage managed through API authentication and billing. **This API path is a proposal, not an implemented or tested integration.**
 
-| column | content |
-| --- | --- |
-| `Holiday_Flag` | 1 for 10 weeks, usually described as the Super Bowl, Labor Day, Thanksgiving and Christmas weeks |
-| `Temperature` | −2 to 100 (looks like °F) |
-| `Fuel_Price` | 2.47 to 4.47 |
-| `CPI` | 126 to 227 |
-| `Unemployment` | 3.9 to 14.3 (%) |
+Possible next steps:
 
-What stands out: sales are flat most of the year and spike before Christmas (the total of all 45 stores peaks
-at 80.9 M in the week of 2010-12-24 and 77.0 M on 2011-12-23). In this file the Christmas flag falls on the week
-*after* that peak (2010-12-31), so the biggest weeks are not flagged. t0-gamma still forecasts the late-December
-peak from the yearly pattern alone, as in the screenshot.
+- Build an API-backed adapter while preserving the same Power BI output schema.
+- Expose horizon, target and quantile configuration more directly in the Power BI interface.
+- Package the workflow as a more native Power Query connector.
+- Explore scheduled refresh via a Power BI gateway, then validate service deployment.
+- Add optional covariates and backtesting views to the dashboard.
 
-*Source: this file matches the store-level weekly sales data commonly shared on Kaggle from the Walmart
-Recruiting – Store Sales Forecasting competition. We did not verify its origin or license; check them before
-redistributing the file.* `examples/sales.csv` is a small synthetic dataset (3 stores, 365 days) written for this project.
+## Current scope and limitations
 
-## Verification status
+This is a **working Desktop proof of concept**, not a production Power BI connector.
 
-Checked by the author in Power BI Desktop: the Python environment is accepted, the `DataFile` / `Data` / `Forecast`
-queries load, the report with chart, slicer and KPI cards works on the synthetic and Walmart data. Checked in Python
-against the real model: forecasting of several series, other column names, daily / weekly / monthly data, the Walmart
-holdout above, and `install.ps1` from scratch (with the model already cached, so the ~1 GB download was not re-timed).
+- **Validated in Power BI Desktop:** local Python environment, `DataFile` / `Data` / `Forecast` queries, report visuals and dataset switching with the Walmart and synthetic demo data.
+- **Refresh cost:** Power BI starts a new Python process for the step, so the model is loaded from disk on each refresh. Power Query may evaluate a query more than once during editing.
+- **Input scope:** daily, weekly or monthly series; one numeric target per run; no covariates in the current forecast.
+- **Quantile scope:** quantiles are computed per series. Summing individual series' lower or upper quantiles does **not** produce the corresponding quantile for an aggregate; the demo slicer is single-select.
+- **Deployment:** Power BI Service scheduled refresh, gateway setup and GPU inference have not been validated.
+- **Scale:** on a Ryzen 7 5700X (CPU), the original demo measured approximately 5 seconds for 45 series of 143 observations in a fresh process, with approximately 2.2 GB peak RAM.
 
-Not done: a `.pbit` template (it can only be exported from Power BI Desktop), GPU inference, real data other than the
-Walmart file, and automated tests (none are included in this repository).
-
-## Known limitations
-
-- **Model reload on each refresh.** Power BI starts a new Python process for every Python step, so t0-gamma is read from disk each time (~3 s). Nothing stays in memory between refreshes.
-- Power Query may evaluate a query more than once while you edit it, and each evaluation runs the model.
-- Power BI sends a **Date**-typed column to Python as the text `Microsoft.OleDb.Date`; the provided query converts date columns to text first.
-- Daily, weekly and monthly data only; one numeric column per run; no covariates. Weekly and monthly forecasts are validated on the Walmart file only.
-- Quantiles are per series: summed P10/P90 across series are not the P10/P90 of the total, so the slicer is single-select.
-- Series are sorted as text in the slicer (1, 10, 11 … 2).
-- Scheduled refresh in the Power BI Service would need a personal-mode gateway with the same Python environment (not tested).
-
-## Next steps
-
-- **Covariates**: pass holidays, promotions, fuel price or weather as `future_covariates`. The Walmart file already holds some.
-- **Backtesting** inside the report, so users can see how reliable a series' forecast has been.
-- **Native Power Query connector** with horizon and quantiles as settings in the Power BI interface.
-- **An API-based alternative** via The Forecasting Company for machines that cannot run the model, and for the Power BI Service.
-
-## Layout
+## Repository structure
 
 ```text
-src/t0_powerbi/     preprocessing.py (detection, cleaning) · model.py (local loading, setup) · forecasting.py
-powerbi/            power_query_script.py · queries/*.pq · build_queries.py (regenerates the queries) · dashboard_guide.md
-examples/           Walmart_Sales.csv · sales.csv · walmart_holdout.py
-screenshots/        dashboard_walmart.png
-install.ps1
+src/t0_powerbi/           Dataset preparation, model loading, forecasting
+powerbi/                 Power Query scripts, query generator, dashboard guide
+powerbi/queries/         DataFile, Data and Forecast (M queries)
+examples/                Walmart and synthetic demo data
+screenshots/             Power BI dashboard screenshot
+install.ps1              Windows environment setup
 ```
 
 ## Credits
 
-t0 and t0-gamma are by [The Forecasting Company](https://www.theforecastingcompany.com/) (Apache-2.0). This project
-wraps the official `tfc-t0` package for Power BI. Paper: *t0: A Time-Series Foundation Model for Forecasting with
-Context*, arXiv:2609.24559. License: Apache-2.0.
+The forecasting model **t0 / t0-gamma** was developed by [The Forecasting Company](https://www.theforecastingcompany.com/). This project is an independent Power BI integration prototype built around the official [`tfc-t0`](https://github.com/theforecastingcompany/tfc-t0) Python package; it does **not** claim authorship of the model.
+
+Model: [t0-gamma on Hugging Face](https://huggingface.co/theforecastingcompany/t0-gamma) · Paper: [*t0: A Time-Series Foundation Model for Forecasting with Context*](https://arxiv.org/abs/2609.24559)
+
+Before redistributing code, model weights or example data, check the relevant upstream and dataset license terms.
