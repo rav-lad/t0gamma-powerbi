@@ -12,7 +12,7 @@ cloud inference, no server, no CSV to export by hand.
 *Power BI Desktop, Walmart store 18: weekly sales history, 30-week t0-gamma forecast with its P10–P90 band,
 and KPI cards. The model puts the peak in the week of 21 December 2012 without being told about holidays.*
 
-**Demo video:** _link to add_
+**Demo video:** https://youtu.be/c0pWl_tuQ1o
 
 ## What was built
 
