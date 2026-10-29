@@ -24,22 +24,6 @@ and KPI cards. The model puts the peak in the week of 21 December 2012 without b
   P10–P90 band, and KPI cards (expected demand, expected change, forecast uncertainty, volatility, peak).
 - `install.ps1`, which sets up the environment and downloads the model once.
 
-```text
- Power BI Desktop
-   │  Data query (CSV, Excel, SQL, ...)
-   ▼
- Power Query ── "Run Python script" ──►  dataset (pandas DataFrame)
-                                            │
-                                            ▼
-                              t0_powerbi.forecast_dataframe
-                               ├─ detect date / value / series columns and frequency
-                               ├─ load t0-gamma from the local Hugging Face cache (CPU or GPU)
-                               └─ T0Forecaster.predict  →  P10 / P50 / P90
-                                            │
- Power Query  ◄──────── one table: history + forecast
-   ▼
- Report: chart, slicer, KPI cards
-```
 
 The pasted script is short:
 
