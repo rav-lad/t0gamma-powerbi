@@ -186,9 +186,7 @@ Walmart file, and automated tests (none are included in this repository).
 
 - **Covariates**: pass holidays, promotions, fuel price or weather as `future_covariates`. The Walmart file already holds some.
 - **Backtesting** inside the report, so users can see how reliable a series' forecast has been.
-- **A `.pbit` template** so that someone else only has to choose a file.
 - **Native Power Query connector** with horizon and quantiles as settings in the Power BI interface.
-- **Faster refreshes** and **model selection** (t0-alpha / t0-beta / t0-gamma).
 - **An API-based alternative** via The Forecasting Company for machines that cannot run the model, and for the Power BI Service.
 
 ## Layout
